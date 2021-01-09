@@ -1,0 +1,241 @@
+#fin peaks, find zero crossings, then from range peak1 to peak2, what is the last zero crossing
+
+
+library(data.table)
+library(tictoc)
+library(ggplot2)
+library(dplyr)
+library(signal)
+library(roll)
+library(pracma)
+library(plotly)
+source("peakdet.R")
+library(rootSolve)
+library(scales)
+library(tidyr)
+library(qpcR)
+library(plyr)
+library(RSpincalc)
+library(biomechanics)
+library(mFilter)
+library(IRISSeismic)
+
+rm(list = ls())
+if(!is.null(dev.list())) dev.off()
+
+
+FootdfAl <- data.frame(fread(choose.files(default = "C:/Users/aaron.beach/CaptureU/Alex/a", caption = "Select Foot File")))
+PelvisdfAl <- data.frame(fread(choose.files(default = "C:/Users/aaron.beach/CaptureU/Alex/a", caption = "Select Pelvis File")))
+ThoraxdfAl <- data.frame(fread(choose.files(default = "C:/Users/aaron.beach/CaptureU/Alex/a", caption = "Select Thorax File")))
+HanddfAl <- data.frame(fread(choose.files(default = "C:/Users/aaron.beach/CaptureU/Alex/a", caption = "Select Hand File")))
+
+Ballvelocity <-  data.frame(fread(choose.files(default = "C:/Users/aaron.beach/CaptureU/Alex/a", caption = "Select Ball Velocity File")))
+
+
+################
+FootdfAl$time_s<- FootdfAl$time_s - FootdfAl$time_s[1]
+PelvisdfAl$time_s<- PelvisdfAl$time_s - PelvisdfAl$time_s[1]
+ThoraxdfAl$time_s<- ThoraxdfAl$time_s - ThoraxdfAl$time_s[1]
+HanddfAl$time_s<- HanddfAl$time_s - HanddfAl$time_s[1]
+
+FootdfAl$ResAcc = sqrt((FootdfAl$"highg_ax_m.s.s"^2) + (FootdfAl$"highg_ay_m.s.s"^2) + (FootdfAl$"highg_az_m.s.s"^2))-9.8
+HanddfAl$ResAcc = sqrt((HanddfAl$"highg_ax_m.s.s"^2) + (HanddfAl$"highg_ay_m.s.s"^2) + (HanddfAl$"highg_az_m.s.s"^2))-9.8
+
+#################
+# PelvisdfAl$gx_deg.s = PelvisdfAl$gx_deg.s*57.2958
+# ThoraxdfAl$gx_deg.s = ThoraxdfAl$gx_deg.s*57.2958
+# HanddfAl$gx_deg.s = HanddfAl$gx_deg.s*57.2958
+# 
+# PelvisdfAl$gy_deg.s = PelvisdfAl$gy_deg.s*57.2958
+# ThoraxdfAl$gy_deg.s = ThoraxdfAl$gy_deg.s*57.2958
+# HanddfAl$gy_deg.s = HanddfAl$gy_deg.s*57.2958
+# 
+# PelvisdfAl$gz_deg.s = PelvisdfAl$gy_deg.s*57.2958
+# ThoraxdfAl$gz_deg.s = ThoraxdfAl$gy_deg.s*57.2958
+# HanddfAl$gz_deg.s = HanddfAl$gy_deg.s*57.2958
+
+
+
+
+############# FILTERING #############
+
+# spectrum(Ballvelocity$BallVelocity, method = "ar")
+#  residual_analysis(Ballvelocity$BallVelocity, cutoff_range = c(0, 10), sample_freq = 100,
+#                    final_order = 4, interval = 0.5)
+# 
+#  bfBV <- butter(4, 5/50, type="low")
+#  
+#  Ballvelocity$BallVelocityFilt <- filtfilt(bfBV, Ballvelocity$BallVelocity)
+#  plot(Ballvelocity$BallVelocity, type = 'l')
+#  plot(Ballvelocity$BallVelocityFilt, type = 'l')
+
+
+
+#spectrum(FootdfAl$ResAcc, method = "ar")
+#residual_analysis(FootdfAl$ResAccfilt, cutoff_range = c(0, 800), sample_freq = 1600,
+#                  final_order = 4, interval = 1)
+
+bfF <- butter(4, 20/800, type="low")
+bfH <- butter(4, 6/800, type="low")
+
+
+FootdfAl$ResAccfilt <- filtfilt(bfF, FootdfAl$ResAcc)
+HanddfAl$ResAccfilt <- filtfilt(bfH, HanddfAl$ResAcc)
+
+#plot <- ggplot() + geom_line(aes(x=FootdfAl$V1, y=(FootdfAl$ResAcc))) + geom_line(aes(x=FootdfAl$V1, y=(FootdfAl$ResAccfilt), colour = "red"))
+#plot <- ggplot() + geom_line(aes(x=HanddfAl$V1, y=(HanddfAl$ResAcc))) + geom_line(aes(x=HanddfAl$V1, y=(HanddfAl$ResAccfilt), colour = "red"))
+
+#ggplotly(plot)
+
+
+#spectrum(PelvisdfAl$"gx_deg.s", method = "ar")
+#residual_analysis(PelvisdfAl$"gx_deg.s", cutoff_range = c(0, 20), sample_freq = 1600,
+#                   final_order = 4, interval = 0.5)
+bfP <- butter(4, 7/800, type="low")
+
+PelvisdfAl$gyroxfilt <- filtfilt(bfP, PelvisdfAl$"gx_deg.s")
+PelvisdfAl$gyroyfilt <- filtfilt(bfP, PelvisdfAl$"gy_deg.s")
+PelvisdfAl$gyrozfilt <- filtfilt(bfP, PelvisdfAl$"gz_deg.s")
+
+#plot <- ggplot() + geom_line(aes(x=PelvisdfAl$V1, y=(PelvisdfAl$"gx_deg.s"))) + geom_line(aes(x=PelvisdfAl$V1, y=(PelvisdfAl$gyroxfilt), colour = "red"))
+#ggplotly(plot)
+#spectrum(ThoraxdfAl$"gx_deg.s", method = "ar")
+#residual_analysis(ThoraxdfAl$"gx_deg.s", cutoff_range = c(0, 40), sample_freq = 1600,
+#                  final_order = 4, interval = 0.5)
+
+
+bfT <- butter(4, 7/800, type="low")
+
+ThoraxdfAl$gyroxfilt <- filtfilt(bfT, ThoraxdfAl$"gx_deg.s")
+ThoraxdfAl$gyroyfilt <- filtfilt(bfT, ThoraxdfAl$"gy_deg.s")
+ThoraxdfAl$gyrozfilt <- filtfilt(bfT, ThoraxdfAl$"gz_deg.s")
+
+#plot <- ggplot() + geom_line(aes(x=ThoraxdfAl$V1, y=(ThoraxdfAl$"gx_deg.s"))) + geom_line(aes(x=ThoraxdfAl$V1, y=(ThoraxdfAl$gyroxfilt), colour = "red"))
+#ggplotly(plot)
+#ggplot() + geom_line(aes(x=PelvisdfAl$V1, y=(PelvisdfAl$gyroxfilt)))
+
+
+bfH <- butter(4, 5/800, type="low")
+HanddfAl$gyroxfilt <- filtfilt(bfH, HanddfAl$"gx_deg.s")
+HanddfAl$gyroyfilt <- filtfilt(bfH, HanddfAl$"gy_deg.s")
+HanddfAl$gyrozfilt <- filtfilt(bfH, HanddfAl$"gz_deg.s")
+
+#plot <- ggplot() + geom_line(aes(x=HanddfAl$V1, y=(HanddfAl$"gx_deg.s"))) + geom_line(aes(x=HanddfAl$V1, y=(HanddfAl$gyroxfilt), colour = "red"))
+#ggplotly(plot)
+
+
+
+
+
+
+
+
+#######CREATE EVENTS FROM  ACC PEAKS#########
+Event <- findpeaks((FootdfAl$ResAccfilt), minpeakheight = 100, minpeakdistance = 100)
+# ev <-  ggplot() + geom_line(aes(x=FootdfAl$V1, y=(FootdfAl$ResAccfilt))) + geom_point(aes(x=Event[,2], y=Event[,1]))
+# ev
+Event <- Event[,2]
+
+EventRelease <- findpeaks((HanddfAl$ResAccfilt), minpeakheight = 90, minpeakdistance = 100)
+
+#ev <-  ggplot() + geom_line(aes(x=HanddfAl$V1, y=(HanddfAl$ResAccfilt))) + geom_point(aes(x=EventRelease[,2], y=EventRelease[,1]))
+#ev
+
+
+#VideoRelease <- Event2[1] + 1.86
+
+#Event <- Event[,2]
+EventRelease2 <- EventRelease[,2]
+EventRelease2 <-  max(EventRelease2)
+#EventRelease2 <- EventRelease2[3]
+Event <- sort(Event, decreasing = FALSE)
+Event <-  Event[1:4]
+Event2 <- FootdfAl$time_s[Event]
+Release <- FootdfAl$time_s[EventRelease2]
+
+Event2 = c(Event2,Release)
+
+# Event2[5] <- 7.40
+
+
+
+########################
+
+yaxisrange = range(PelvisdfAl$gyroxfilt,ThoraxdfAl$gyroxfilt)
+xaxisrange = length(PelvisdfAl$gyroxfilt)
+yaxisrange2 = range(HanddfAl$ResAccfilt)
+
+
+fig <- plot_ly(x = PelvisdfAl$time_s) %>%
+  add_trace(y = PelvisdfAl$gyroxfilt, type = 'scatter', mode = 'lines',
+            line = list(color = 'rgba(250, 0, 0, 1)'),
+            showlegend = TRUE, name = 'Pelvis Rotation')%>% 
+  add_trace(y = ThoraxdfAl$gyroxfilt, type = 'scatter', mode = 'lines', line = list(color = 'green'),
+            showlegend = TRUE, name = 'Thorax Rotation')%>% 
+  add_trace(y = HanddfAl$ResAccfilt, type = 'scatter', mode = 'lines', yaxis = "y2", line = list(color = 'blue'),
+            showlegend = TRUE, name = 'Hand Acceleration')%>%
+add_trace(x=Ballvelocity$Time, y = Ballvelocity$BallVelocity*3, type = 'scatter', mode = 'lines', yaxis = "y2", line = list(color = 'purple'),
+          showlegend = TRUE, name = 'Ball Velocity')
+
+line <- list(
+  type = "line",
+  line = list(color = "black", dash = 'dot'),
+  xref = "x",
+  yref = "y"
+)
+line2 <- list(
+  type = "line",
+  line = list(color = "red", dash = 'dot'),
+  xref = "x",
+  yref = "y"
+)
+
+lines <- list()
+for (i in c(1,2,3,4)){
+  line[["x0"]] <- Event2[i]
+  line[["x1"]] <- Event2[i]
+  line[["y0"]] <- yaxisrange[1]
+  line[["y1"]] <- yaxisrange[2]
+  lines <- c(lines, list(line))
+}
+
+lines2 <- list()
+line2[["x0"]] <- Event2[5]
+line2[["x1"]] <- Event2[5]
+line2[["y0"]] <- yaxisrange[1]
+line2[["y1"]] <- yaxisrange[2]
+lines2 <- c(lines2, list(line2))
+
+fig <-  layout(fig, xaxis = list(title = "Time (s)",
+                                 showgrid = TRUE,
+                                 showline = FALSE,
+                                 showticklabels = TRUE,
+                                 ticks = 'outside',
+                                 zeroline = TRUE),
+               yaxis = list(title = "Rotational velocity (deg/s)",
+                            showgrid = TRUE,
+                            showline = FALSE,
+                            showticklabels = TRUE,
+                            ticks = 'outside',
+                            range = c(-400,1000),
+                            zeroline = TRUE),
+               yaxis2 = list(title = "Velocity (m/s)",
+                             overlaying = "y",
+                             side = "right",
+                             showgrid = FALSE,
+                             showline = FALSE,
+                             showticklabels = TRUE,
+                             ticks = 'inside',
+                             zeroline = TRUE,
+                             range = c(-60,120),
+                             color = 'rgba(122, 39, 160, 1)'),
+               margin = list(l = 0, r = 40, b = 0, t = 0),
+               legend = list(x =0.1, y = 0.8, font = list(size = 24)), shapes = c(lines, lines2),
+               annotations = list(text = c("Foot Strikes", "Release"),  x = c(Event2[3], Event2[5]), y = c(-400,-400),showarrow=FALSE,xanchor = c('right', 'left'), font = list(size = 24))
+) %>%
+  config(displayModeBar = T)
+
+
+fig
+# alldf = data.frame(PelvisdfAl$gyroxfilt,ThoraxdfAl$gyroxfilt)
+# write.csv(alldf, "C:/Users/aaron.beach/CaptureU/Alex Sunday Event/Combined.csv")
